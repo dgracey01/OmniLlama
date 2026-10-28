@@ -47,6 +47,26 @@ if (ctx_v || ctx_a) {
 **Upstream (reverted) form:** the body above with no `if (ctx_v || ctx_a) { ... }` wrapper
 (i.e. `int n_embd_clip = clip_n_mmproj_embd(ctx_v ? ctx_v : ctx_a);` at top level).
 
+## Fix 3 — HIP/ROCm fp8 guard (only needed to build the AMD/ROCm backend)
+
+**File:** `ggml/src/ggml-cuda/vendors/hip.h` (~line 251)
+
+The fp8 block is gated on `HIP_VERSION >= 60200000`, but ROCm **6.2** ships only the `_fnuz` fp8 variant
+— the plain `__hip_fp8_e4m3` (OCP) type arrives in **6.3**. On 6.2 the `typedef __hip_fp8_e4m3 …` fails
+("unknown type name") and takes down all ~14 ggml-cuda/HIP kernels at the header. The voice path does not
+use fp8, so bump the guard to `>= 60300000`:
+
+```cpp
+#if HIP_VERSION >= 60300000      // was 60200000
+#include <hip/hip_fp8.h>
+typedef __hip_fp8_e4m3 __nv_fp8_e4m3;
+#define FP8_AVAILABLE
+#endif // HIP_VERSION >= 60300000
+```
+
+Only relevant when building `GGML_HIP=ON` against ROCm < 6.3. Verified: voice gen PASS on the RX 7800 XT
+(gfx1101, device ROCm0). Not needed for CUDA or Vulkan builds.
+
 ## Re-apply check (after any engine pull)
 
 ```
