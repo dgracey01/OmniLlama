@@ -115,6 +115,43 @@ can ship with text-driven speech (speak the generated reply), which matches what
 6. **AMD / 16 GB** — Vulkan/ROCm thinker + CPU voice; verify fit + output.
 7. **Server + streaming** (optional).
 
+## Omni-2 vs Omni-3 — what the Conductor must branch on
+
+The Conductor must detect the model **generation** (from config/arch) and dispatch accordingly. These are
+not minor config deltas — the **voice stage differs fundamentally**.
+
+| Aspect | Qwen2.5-Omni (omni-2) | Qwen3-Omni (omni-3) | Impact |
+|---|---|---|---|
+| Thinker | Qwen2.5 **dense** (7B) | Qwen3 **MoE** (30B-A3B, `qwen3vlmoe`) | different arch loader |
+| Talker | **DiT audio decoder** driven from thinker hidden states | autoregressive: 1 codec frame/step + separate **MTP** for residual codebooks; MoE | different talker arch + codes mechanism |
+| Vocoder | **block-wise DiT (diffusion)** token2wav | **streaming causal ConvNet** Code2Wav, 12.5 Hz | **fundamentally different** — the fork implements ONLY the omni-3 causal-conv path |
+| Audio encoder | Whisper-based | AuT encoder | different input mmproj |
+| Streaming | needs a context block first (higher TTFA) | incremental per frame | latency/scheduling |
+
+Sources: [Qwen2.5-Omni report](https://arxiv.org/pdf/2503.20215), [Qwen3-Omni report](https://arxiv.org/pdf/2509.17765).
+(To verify per model card: the claim that omni-2 is single-codebook vs omni-3 16-codebook — stated by a
+third-party repo, not the official reports.)
+
+**What the fork implements today: omni-3 only.** For an omni-2 model the thinker + input encoders could be
+made to load (dense Qwen2 arch + Whisper-style encoder, given converters), but its **native DiT voice
+decoder is not in the fork** — a separate, larger build (and the approach Qwen abandoned for omni-3).
+
+**But Zero's omni-2 characters never used the native Talker.** Per the AI Library
+(`character-locked-omni-thinker.md`), the shipped characters — Tifa, Aerith, Cortana, Deepsex-RP — are
+Qwen2.5-Omni-7B **Thinker-only LoRAs**, deployed as a **thinker-only text GGUF + modular Kokoro voice**
+(the 2.5 Talker was dropped because it can't learn a custom voice). So for those characters the omni-2
+"voice path" is simply **thinker → text → external Kokoro TTS**, which already works and needs no DiT.
+
+**Practical guidance — the voice stage is a dispatch point:**
+- `omni3 model` → native causal-conv Code2Wav (built, verified CUDA/Vulkan/ROCm);
+- `omni2 character` → thinker text → **Kokoro** (modular, external) — trivial to wire, matches how they ship;
+- `omni2 native DiT voice` → **not built** and not needed for Zero's characters (only if raw omni-2 Talker
+  speech were ever required).
+
+**Recommended convergence:** re-distill the omni-2 personas onto the **omni-3** thinker so they ride
+OmniLlama's verified native voice — giving the characters a *native* Omni voice for the first time, instead
+of modular Kokoro. (Deferred: character phase is held.)
+
 ## Known mechanisms — do not re-derive
 
 MTP coupling, the talker feedback sum, NEOX 1-D RoPE, the `assistant_parts` layout, the codec special
