@@ -57,7 +57,11 @@ If 0, both fixes were reverted — re-apply the two blocks above, then rebuild
 
 ## Also fork-local (same non-git revert risk)
 
-New tool sources + CMake targets, all mirrored in `F:\VC Projects\OmniLlama\src\`:
+New tool sources + converter + CMake targets, all mirrored in `F:\VC Projects\OmniLlama\src\`:
 - `tools/mtmd/talker-embed-test.cpp`  (5b-3 teacher-forced harness)
-- `tools/mtmd/talker-tts-test.cpp`     (5b-4 end-to-end text→WAV orchestrator)
-- `tools/mtmd/CMakeLists.txt` targets: `llama-talker-embed-test`, `llama-talker-tts-test`
+- `tools/mtmd/talker-tts-test.cpp`     (5b-4 end-to-end text→WAV orchestrator, fixed-sentence)
+- `tools/mtmd/omnillama-tts.cpp`       (5b-5 Tier-2 SELF-CONTAINED arbitrary-text TTS)
+- `conversion/omnillama_textfe.py`     (5b-5 Tier-2 front-end GGUF converter; driver `src/convert_omni_textfe.py`)
+- `tools/mtmd/CMakeLists.txt` targets: `llama-talker-embed-test`, `llama-talker-tts-test`, `llama-omnillama-tts`
+  (each is `add_executable` + `target_link_libraries(... llama-common mtmd Threads::Threads)` + `cxx_std_17`,
+  except talker-embed/talker-test which link `llama` not `mtmd`)
