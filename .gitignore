@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# Large model / audio artifacts live on Goliath (X:\_bridge\...), never in this repo
+*.gguf
+*.bin
+*.safetensors
+*.npy
+*.wav
+*.pcm
+*.pcm_f32.bin
