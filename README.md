@@ -12,6 +12,24 @@ llama-omnillama-tts  frontend.gguf  talker.gguf  voice_mmproj.gguf  "any text yo
 That one command turns arbitrary text into a 24 kHz WAV using only the compiled binary and three GGUF
 files. **Status: working and verified** on an RTX 3090 (see [Verification](#verification)).
 
+## Models (download)
+
+Quantized **unified** GGUFs — the whole Omni (brain + vision + audio input + talker + Code2Wav) packed
+into **one file per quant**, in the fashion of the original single model:
+
+**→ https://huggingface.co/Zero-000/OmniLlama-Qwen3-Omni-30B-A3B-GGUF**
+
+| File | Size | Fits |
+|---|---|---|
+| `…-OmniLlama-Q5_K_M.gguf` | ~28 GB | 24 GB VRAM |
+| `…-OmniLlama-Q4_K_M.gguf` | ~25 GB | 24 GB VRAM |
+| `…-OmniLlama-IQ3_M.gguf`  | ~20 GB | 16 GB VRAM |
+
+These use a custom unified arch (`general.architecture = qwen3omni`); the **unified loader that runs them
+is in development** (stock llama.cpp / ollama / LM Studio expect a decoder + separate `mmproj` and can't
+load them yet). The component voice path is already verified in this fork; the single-file loader is the
+remaining piece. Base model only — no character fine-tuning.
+
 ---
 
 ## ⚠️ Target model — what this is calibrated to
