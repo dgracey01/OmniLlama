@@ -152,6 +152,71 @@ Qwen2.5-Omni-7B **Thinker-only LoRAs**, deployed as a **thinker-only text GGUF +
 OmniLlama's verified native voice — giving the characters a *native* Omni voice for the first time, instead
 of modular Kokoro. (Deferred: character phase is held.)
 
+## Supporting both Qwen Omni generations (omni-2 + omni-3)
+
+Goal: one Conductor that loads **either** a Qwen2.5-Omni (omni-2) or a Qwen3-Omni (omni-3) model and runs
+it as see/hear/think/speak. The enabling idea: **decouple the brain from the voice** and make every stage
+**generation-dispatched from config** — so a model is just `(thinker, input-encoders, voice-backend)`
+chosen per generation, not a monolith.
+
+### Core principle: brain ↔ voice is a pluggable pairing
+Zero's own setup proves this is the right seam — omni-2 characters already run as `Qwen2.5 thinker +
+Kokoro`. So the Conductor treats **voice as an interface**, and any brain pairs with any voice:
+
+```
+interface VoiceBackend { speak(text | thinker_hidden, speaker?) -> PCM }
+  NativeOmni3Voice   Talker(qwen3omnitalker)+MTP+Code2Wav    [BUILT, verified CUDA/Vulkan/ROCm]
+  KokoroVoice        external Kokoro TTS                      [exists — wrap it]
+  Qwen3TTSVoice      modular llama-tts (optional)             [exists upstream]
+  NativeOmni2Voice   Qwen2.5 DiT token2wav                    [NOT built; optional, not recommended]
+```
+
+The thinker always emits text and, when a native voice is selected, exposes the hidden-state tap; the
+chosen backend consumes whichever it needs.
+
+### Per-stage dispatch matrix
+
+| Stage | omni-2 (Qwen2.5-Omni-7B) | omni-3 (Qwen3-Omni-30B-A3B) | Built? |
+|---|---|---|---|
+| detect generation | arch `Qwen2_5Omni…` / dense | arch `Qwen3OmniMoe…` / `qwen3vlmoe` | trivial |
+| thinker decode | dense Qwen2 text GGUF | `qwen3vlmoe` MoE GGUF | both load in llama.cpp today |
+| vision input | Qwen2.5-VL ViT mmproj | qwen3vl ViT mmproj | omni-3 built; omni-2 convert TBD |
+| audio input | Whisper-style encoder | AuT encoder | general runtime gap, both gens |
+| **voice** | **Kokoro** (what chars use) · or native DiT | **native Talker+MTP+Code2Wav** | omni-3 built; Kokoro easy; omni-2 DiT not built |
+| constants / template | omni-2 ids / specials / speakers | omni-3 ids / specials / speakers | config-read, never hardcode |
+
+### What "handle both" actually requires
+
+**Already built / near-free:** omni-3 full voice; both thinker text decoders (llama.cpp supports dense
+Qwen2 and `qwen3vlmoe`); omni-3 input mmproj.
+
+**Bounded new work:**
+1. **Generation detector + dispatch** — read arch/config; pick thinker loader, encoders, voice backend.
+2. **Voice-backend interface** — formalize the seam above; implement `NativeOmni3Voice` (wrap the
+   `omnillama-tts` machinery) and `KokoroVoice` (link/shell Kokoro).
+3. **omni-2 thinker + Kokoro end-to-end** — load the 2.5 thinker GGUF, route its text to Kokoro. This
+   alone makes **every existing character** run inside the Conductor (the text brain they already have +
+   their Kokoro voice). Low effort, high payoff.
+4. **Config-driven constants** per generation (stop hardcoding omni-3 IDs in the voice assembly).
+
+**Optional / larger (only if ever needed):**
+5. **omni-2 vision/audio input mmproj** — if the omni-2 characters should *see/hear* (they ship text-only
+   today). New converters + runtime.
+6. **`NativeOmni2Voice` (DiT token2wav)** — person-months of a diffusion vocoder in ggml, the approach
+   Qwen abandoned. **Not recommended** — Kokoro covers omni-2 voice, and the convergence path gives native
+   voice via omni-3 instead.
+
+### Recommended shape
+- **omni-3** → native everything (brain + eyes/ears + native voice). The flagship.
+- **omni-2** → thinker + Kokoro (runs the existing characters as-is), optionally + vision/audio input.
+- **Don't** build the omni-2 DiT voice; **converge** instead — re-distill omni-2 personas onto the omni-3
+  thinker so they inherit native voice. Long-term one brain family (omni-3); omni-2 stays runnable through
+  the Kokoro backend for the legacy characters.
+
+Net: the Conductor stays a **thin dispatcher over {brain loader × input-encoder set × pluggable voice
+backend}** — which is exactly why both generations fit one runtime without special-casing deep in the
+pipeline.
+
 ## Known mechanisms — do not re-derive
 
 MTP coupling, the talker feedback sum, NEOX 1-D RoPE, the `assistant_parts` layout, the codec special
